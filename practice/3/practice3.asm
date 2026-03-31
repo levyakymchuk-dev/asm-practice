@@ -1,36 +1,58 @@
 ; practice3.asm
-; I/O: int 80h
-; blocks: I/O, parse, math/logic, loops, memory
+; I/O: int 0x80
+; blocks: I/O, parse, math, logic, loops, memory
 
 BITS 32
 GLOBAL _start
 
 SECTION .data
-prompt db "practice3: see README.md", 10
-prompt_len equ $-prompt
+newline db 10
 
 SECTION .bss
-buf resb 256
+buf resb 6          ; memory (max 6 digits)
 
 SECTION .text
 _start:
-    ; I/O: write prompt
-    mov eax, 4          ; sys_write
-    mov ebx, 1          ; stdout
-    mov ecx, prompt
-    mov edx, prompt_len
+
+    ; logic: number in AX (change if needed)
+    mov ax, 54321
+
+    ; parse: move to eax
+    movzx eax, ax
+
+    ; memory: pointer to end of buffer
+    mov edi, buf + 6
+
+convert_loop:
+    ; math
+    mov edx, 0
+    mov ecx, 10
+    div ecx
+
+    add dl, '0'
+    dec edi
+    mov [edi], dl
+
+    ; loops
+    test eax, eax
+    jnz convert_loop
+
+    ; I/O: write result
+    mov eax, 4
+    mov ebx, 1
+    mov ecx, edi
+    mov edx, buf + 6
+    sub edx, edi
     int 0x80
 
-    ; I/O: read line (optional in skeleton)
-    mov eax, 3          ; sys_read
-    mov ebx, 0          ; stdin
-    mov ecx, buf
-    mov edx, 255
+    ; I/O: newline
+    mov eax, 4
+    mov ebx, 1
+    mov ecx, newline
+    mov edx, 1
     int 0x80
-
-    ; logic: TODO implement task logic according to README.md
 
     ; exit
-    mov eax, 1          ; sys_exit
+    mov eax, 1
     xor ebx, ebx
     int 0x80
