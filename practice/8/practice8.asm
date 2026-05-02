@@ -1,218 +1,198 @@
-﻿BITS 32
-GLOBAL _start
+; practice8.asm
+; I/O: int 80h (sys_read, sys_write, sys_exit)
+; Blocks: I/O, parse, logic, loops, memory
 
-SECTION .data
-newline db 10
-space   db ' '
+section .data
+    msg_idx    db "First index: ", 0
+    msg_count  db 10, "Count: ", 0
+    msg_list   db 10, "Indices: ", 0
+    msg_none   db "-1", 0
+    newline    db 10
+    space      db " "
 
-SECTION .bss
-input     resb 1024
-arr       resd 100
-matches   resd 100
-buf       resb 32
-n         resd 1
-target    resd 1
-count     resd 1
-first_idx resd 1
-p         resd 1
+section .bss
+    buffer     resb 64
+    array      resd 100     
+    n_val      resd 1      
+    target     resd 1
+    found_idx  resd 1    
+    total_found resd 1     
 
-SECTION .text
+section .text
+    global _start
+
 _start:
-    ; read all input at once
-    mov eax, 3
-    mov ebx, 0
-    mov ecx, input
-    mov edx, 1024
-    int 0x80
+    ; --- I/O: Read n ---
+    call read_int
+    mov [n_val], eax
 
-    mov eax, input
-    mov [p], eax
-
-    ; read n
-    call atoi
-    mov [n], eax
-
-    ; read array elements
-    xor ecx, ecx
-read_arr:
-    cmp ecx, [n]
-    jge read_target
-    call atoi
-    mov [arr + ecx*4], eax
+    ; --- Loops: Read n numbers into array ---
+    mov ecx, 0
+read_array_loop:
+    cmp ecx, [n_val]
+    je read_target
+    push ecx
+    call read_int
+    pop ecx
+    mov [array + ecx*4], eax
     inc ecx
-    jmp read_arr
+    jmp read_array_loop
 
 read_target:
-    call atoi
+    ; --- I/O: Read target value ---
+    call read_int
     mov [target], eax
 
-    mov dword [count], 0
-    mov dword [first_idx], -1
+    ; --- Logic: Linear Search ---
+    mov dword [found_idx], -1
+    mov dword [total_found], 0
+    mov ecx, 0
 
-    xor ecx, ecx
-
-search:
-    cmp ecx, [n]
-    jge done
-
-    mov eax, [arr + ecx*4]
+search_loop:
+    cmp ecx, [n_val]
+    je print_results
+    
+    mov eax, [array + ecx*4]
     cmp eax, [target]
-    jne next
+    jne next_iter
 
-    ; FIX 1: save first_idx only once, then always store in matches
-    cmp dword [first_idx], -1
-    jne store
-    mov [first_idx], ecx
+    ; Якщо знайдено
+    inc dword [total_found]
+    cmp dword [found_idx], -1
+    jne next_iter
+    mov [found_idx], ecx    
 
-store:
-    mov edx, [count]
-    mov [matches + edx*4], ecx
-    inc dword [count]
-
-next:
+next_iter:
     inc ecx
-    jmp search
+    jmp search_loop
 
-done:
-    ; FIX 2: print first_idx correctly — if -1 print nothing / handle gracefully
-    mov eax, [first_idx]
+print_results:
+    ; --- I/O: Output First Index ---
+    mov eax, 4
+    mov ebx, 1
+    mov ecx, msg_idx
+    mov edx, 13
+    int 0x80
+
+    mov eax, [found_idx]
     cmp eax, -1
     je print_minus_one
     call print_int
-    jmp after_first_idx
+    jmp print_cnt_msg
 
 print_minus_one:
-    ; print "-1" manually
     mov eax, 4
     mov ebx, 1
-    mov ecx, minus_one_str
+    mov ecx, msg_none
     mov edx, 2
     int 0x80
 
-after_first_idx:
-    call nl
-
-    mov eax, [count]
+print_cnt_msg:
+    ; --- I/O: Output Count ---
+    mov eax, 4
+    mov ebx, 1
+    mov ecx, msg_count
+    mov edx, 8
+    int 0x80
+    mov eax, [total_found]
     call print_int
-    call nl
 
-    mov ecx, [count]
-    test ecx, ecx
-    jz finish           ; FIX 3: skip the extra nl when empty
-
-    xor edx, edx
-print_loop:
-    cmp edx, ecx
-    jge finish
-    mov eax, [matches + edx*4]
-    call print_int
-    inc edx
-    cmp edx, ecx
-    je finish
-    call sp
-    jmp print_loop
-
-finish:
-    call nl
-    mov eax, 1
-    xor ebx, ebx
+    ; --- I/O: Output List of Indices ---
+    mov eax, 4
+    mov ebx, 1
+    mov ecx, msg_list
+    mov edx, 10
     int 0x80
 
-; ── atoi ────────────────────────────────────────────────
-atoi:
-skip_ws:
-    mov esi, [p]
-    mov al, [esi]
-    cmp al, ' '
-    je  .adv
-    cmp al, 10          ; \n
-    je  .adv
-    cmp al, 13          ; \r
-    je  .adv
-    jmp parse_digits
-.adv:
-    inc esi
-    mov [p], esi
-    jmp skip_ws
+    mov ecx, 0
+print_indices_loop:
+    cmp ecx, [n_val]
+    je exit_prog
+    
+    mov eax, [array + ecx*4]
+    cmp eax, [target]
+    jne skip_idx_print
 
-parse_digits:
-    xor eax, eax
-.loop:
-    mov esi, [p]
-    movzx ebx, byte [esi]
-    cmp ebx, '0'
-    jb  .done
-    cmp ebx, '9'
-    ja  .done
-    sub ebx, '0'
-    imul eax, eax, 10
-    add eax, ebx
-    inc esi
-    mov [p], esi
-    jmp .loop
-.done:
-    ret
-
-; ── print_int ───────────────────────────────────────────
-print_int:
-    push eax
-    push ebx
     push ecx
-    push edx
-    push esi
-
-    mov esi, buf + 32
-
-    cmp eax, 0
-    jne .loop
-    dec esi
-    mov byte [esi], '0'
-    jmp .out
-
-.loop:
-    mov ecx, 10
-.digit:
-    xor edx, edx
-    div ecx
-    add dl, '0'
-    dec esi
-    mov [esi], dl
-    test eax, eax
-    jnz .digit
-
-.out:
-    mov eax, 4
-    mov ebx, 1
-    mov ecx, esi
-    mov edx, buf + 32
-    sub edx, esi
-    int 0x80
-
-    pop esi
-    pop edx
-    pop ecx
-    pop ebx
-    pop eax
-    ret
-
-; ── nl ──────────────────────────────────────────────────
-nl:
-    mov eax, 4
-    mov ebx, 1
-    mov ecx, newline
-    mov edx, 1
-    int 0x80
-    ret
-
-; ── sp (FIX 4: was missing int 0x80 and ret) ───────────
-sp:
+    mov eax, ecx
+    call print_int
+    ; Друк пробілу
     mov eax, 4
     mov ebx, 1
     mov ecx, space
     mov edx, 1
     int 0x80
+    pop ecx
+
+skip_idx_print:
+    inc ecx
+    jmp print_indices_loop
+
+exit_prog:
+    mov eax, 4
+    mov ebx, 1
+    mov ecx, newline
+    mov edx, 1
+    int 0x80
+
+    ; --- I/O: sys_exit ---
+    mov eax, 1
+    xor ebx, ebx
+    int 0x80
+
+; --- Memory: Helper to read integer from stdin ---
+read_int:
+    mov eax, 3
+    mov ebx, 0
+    mov ecx, buffer
+    mov edx, 64
+    int 0x80
+    
+    xor eax, eax
+    xor ebx, ebx
+    mov esi, buffer
+.parse:
+    movzx ebx, byte [esi]
+    cmp bl, 10
+    je .done
+    cmp bl, '0'
+    jl .next_char
+    cmp bl, '9'
+    jg .next_char
+    sub bl, '0'
+    imul eax, 10
+    add eax, ebx
+.next_char:
+    inc esi
+    jmp .parse
+.done:
     ret
 
-; ── data for -1 output ──────────────────────────────────
-SECTION .data
-minus_one_str db '-', '1'
+; --- Memory: Helper to print integer to stdout ---
+print_int:
+    test eax, eax
+    jnz .not_zero
+    mov byte [buffer], '0'
+    mov edx, 1
+    jmp .write
+.not_zero:
+    mov edi, buffer + 31
+    mov byte [edi], 0
+    mov ebx, 10
+.loop_digits:
+    xor edx, edx
+    div ebx
+    add dl, '0'
+    dec edi
+    mov [edi], dl
+    test eax, eax
+    jnz .loop_digits
+    mov ecx, edi
+    mov edx, buffer + 31
+    sub edx, edi
+.write:
+    mov eax, 4
+    mov ebx, 1
+    mov ecx, edi
+    int 0x80
+    ret
